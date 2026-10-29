@@ -11,8 +11,20 @@ const urlBase64ToUint8 = (s) => {
 };
 const abToB64 = (ab) => btoa(String.fromCharCode(...new Uint8Array(ab)));
 
+// Device-aware flag: web-push belongs to the retired server stack. In the native app
+// (window.Capacitor present) the alerts surface is the on-device engine (Phase 2/3),
+// so web-push must not advertise itself. In a plain browser it stays available for
+// the legacy PWA path.
+export function isNative() {
+  if (typeof window === "undefined") return false;
+  /** @type {any} */
+  const w = window;
+  const cap = w.Capacitor;
+  return typeof cap !== "undefined" && !!cap.isNativePlatform?.();
+}
+
 export function pushSupported() {
-  return typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  return !isNative() && typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
 
 export async function pushEnabled() {

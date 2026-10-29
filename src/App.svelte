@@ -1,6 +1,7 @@
 <script>
 import { onMount } from "svelte";
 import { app, load, initLoc } from "./core/store.svelte.js";
+import { runSync } from "./device/sync.js";
 import { SITE } from "./core/config.js";
 import { applyTheme } from "./core/theme.svelte.js";
 import { tr, trFmt } from "./core/i18n.svelte.js";
@@ -59,9 +60,20 @@ $effect(() => {
 });
 onMount(() => {
   initLoc();
-  load();
   applyTheme();
-  const t = setInterval(() => { if (!document.hidden) load(); }, 300000); // 5 min, paused when tab hidden
+  // Device-only: seed/refresh from the on-device store. load() reads the store
+  // immediately (fast, works offline), then runSync() fetches what is stale from
+  // the sources and re-loads so the fresh batch lands on screen.
+  const refresh = () => {
+    const pending = runSync();
+    load();
+    void pending.finally(() => load());
+  };
+  refresh();
+  // Background freshness every 15 minutes while the tab is visible (the OS does the
+  // same job when the app is closed via the BackgroundRunner). Never every 5 min on
+  // a phone — battery and data (see docs/device-only-app-spec.md §7).
+  const t = setInterval(() => { if (!document.hidden) refresh(); }, 900000);
   window.addEventListener("hashchange", () => { const v = readHash(); if (v !== view) view = v; });
   return () => { clearInterval(t); window.removeEventListener("hashchange", () => {}); };
 });

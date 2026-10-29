@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { app, load } from "../src/core/store.svelte.js";
 
+/** The device-local API surface, mocked so tests control responses + timing. */
+const apiMock = vi.hoisted(() => ({ urls: [], j: vi.fn() }));
+vi.mock("../src/core/api.js", () => ({ j: apiMock.j }));
+
 /** A summary bundle with a marker so tests can tell which response landed. */
 const bundle = (marker, town, state) => ({
   states: [state],
@@ -11,12 +15,17 @@ const bundle = (marker, town, state) => ({
   marker,
 });
 
-/** fetch that resolves after `ms` — lets us force out-of-order responses. */
-const fetchAfter = (ms, body, ok = true) => () =>
-  new Promise((res) => setTimeout(() => res({ ok, json: async () => body }), ms));
+/** j() that resolves after `ms` — lets us force out-of-order responses. */
+const after = (ms, body) => new Promise((res) => setTimeout(() => res(body), ms));
 
 beforeEach(() => {
   localStorage.clear();
+  apiMock.urls.length = 0;
+  apiMock.j.mockReset();
+  apiMock.j.mockImplementation(async (url) => {
+    apiMock.urls.push(url);
+    return bundle("OK", "arau", "Perlis");
+  });
   app.data = null;
   app.error = "";
   app.picked = null;
@@ -27,12 +36,12 @@ beforeEach(() => {
 
 describe("store.load — request sequencing", () => {
   it("discards a slow, stale response that resolves after a newer one", async () => {
-    globalThis.fetch = vi.fn(fetchAfter(60, bundle("OLD", "arau", "Perlis")));
+    apiMock.j.mockImplementationOnce(() => after(60, bundle("OLD", "arau", "Perlis")));
     const slow = load();
 
     app.state = "Johor";
     app.town = "johor-bahru";
-    globalThis.fetch = vi.fn(fetchAfter(5, bundle("NEW", "johor-bahru", "Johor")));
+    apiMock.j.mockImplementation(async () => after(5, bundle("NEW", "johor-bahru", "Johor")));
     const fast = load();
 
     await Promise.all([slow, fast]);
@@ -43,7 +52,7 @@ describe("store.load — request sequencing", () => {
   it("adopts the first town when the payload does not contain the requested one", async () => {
     app.state = "Johor";
     app.town = "arau"; // stale town from the previous state
-    globalThis.fetch = vi.fn(fetchAfter(1, bundle("NEW", "johor-bahru", "Johor")));
+    apiMock.j.mockImplementation(async () => bundle("NEW", "johor-bahru", "Johor"));
     await load();
     expect(app.town).toBe("johor-bahru");
   });
@@ -51,23 +60,27 @@ describe("store.load — request sequencing", () => {
   it("keeps the current town when the payload does contain it", async () => {
     app.state = "Perlis";
     app.town = "arau";
-    globalThis.fetch = vi.fn(fetchAfter(1, bundle("OK", "arau", "Perlis")));
+    apiMock.j.mockImplementation(async () => bundle("OK", "arau", "Perlis"));
     await load();
     expect(app.town).toBe("arau");
     expect(app.error).toBe("");
   });
 
   it("records an error for a failed latest request", async () => {
-    globalThis.fetch = vi.fn(fetchAfter(1, {}, false));
+    apiMock.j.mockImplementation(async () => {
+      throw new Error("HTTP 500");
+    });
     await load();
     expect(app.error).toBeTruthy();
     expect(app.loading).toBe(false);
   });
 
   it("does not let a stale failure clobber a newer success", async () => {
-    globalThis.fetch = vi.fn(fetchAfter(60, {}, false)); // slow failure
+    apiMock.j.mockImplementationOnce(() => after(60, "boom").then(() => {
+      throw new Error("HTTP 500");
+    }));
     const slow = load();
-    globalThis.fetch = vi.fn(fetchAfter(5, bundle("NEW", "arau", "Perlis"))); // fast success
+    apiMock.j.mockImplementation(async () => after(5, bundle("NEW", "arau", "Perlis")));
     const fast = load();
     await Promise.all([slow, fast]);
     expect(app.error).toBe("");
@@ -77,29 +90,19 @@ describe("store.load — request sequencing", () => {
 
 describe("store.load — request parameters", () => {
   it("scopes state + town, and includes an inspected town via ?towns=", async () => {
-    const urls = [];
-    globalThis.fetch = vi.fn(async (url) => {
-      urls.push(url);
-      return { ok: true, json: async () => bundle("OK", "arau", "Perlis") };
-    });
     app.state = "Perlis";
     app.town = "arau";
     app.picked = "kangar";
     await load();
-    expect(urls[0]).toContain("state=Perlis");
-    expect(urls[0]).toContain("town=arau");
-    expect(urls[0]).toContain("towns=kangar");
+    expect(apiMock.urls[0]).toContain("state=Perlis");
+    expect(apiMock.urls[0]).toContain("town=arau");
+    expect(apiMock.urls[0]).toContain("towns=kangar");
   });
 
   it("omits the state filter in Malaysia scope but still sends the town", async () => {
-    const urls = [];
-    globalThis.fetch = vi.fn(async (url) => {
-      urls.push(url);
-      return { ok: true, json: async () => bundle("OK", "arau", "Perlis") };
-    });
     app.scope = "malaysia";
     await load();
-    expect(urls[0]).not.toContain("state=");
-    expect(urls[0]).toContain("town=arau");
+    expect(apiMock.urls[0]).not.toContain("state=");
+    expect(apiMock.urls[0]).toContain("town=arau");
   });
 });
