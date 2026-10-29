@@ -1,80 +1,53 @@
-# OhAlam — Malaysia air quality & weather dashboard
+# OhAlam — Android app (device-only)
 
-A simple, mobile-friendly website that shows Malaysia's air quality, weather, and
-environmental hazards (earthquakes, floods, official warnings) all in one place.
+**OhAlam** is a Malaysia air-quality, weather and environmental-hazards app. This is the
+**device-only** version: the phone fetches every data source itself (DOE APIMS,
+Open-Meteo, USGS, MET Malaysia, InfoBanjir, NOAA, Malaysian RSS) and raises its own
+alerts. No server, no database, no account.
 
-**Live at:** https://app.oh-alam.my
-
-It speaks English or Bahasa Malaysia, and can be used in light or dark mode.
+> **Status — Phase 0 scaffold.** The Capacitor + Android shell is in place and a
+> debug APK builds in CI. On-device ingestion (Phase 1) and on-device alerting
+> (Phase 2) land next; until then the UI boots into its cached/offline state.
+> Design spec: `docs/device-only-app-spec.md`.
 
 ---
 
 ## What it does
 
-One page you open on your phone to answer "is it safe to go out right now?"
+One app you open to answer "is it safe to go out right now?"
 
 - Air quality (AQI) for towns across all 16 states
-- Current weather and a few-day forecast
+- Current weather and a 10-day forecast
 - Earthquakes, flood alerts, and official MET Malaysia warnings
-- A share button so you can send a picture of the reading to a friend
+- Hazard news from key-free Malaysian RSS feeds
+- A share button that draws a picture of the reading to send to a friend
 
-It only reads from one place — the OhAlam API. It never talks to the data sources
-directly, so all the messy stuff (which government site, which weather service) is kept
-behind the scenes.
+## Development
 
----
-
-## Run it on your machine (for development)
-
-You need [Node.js](https://nodejs.org) installed.
+Requires [Node.js](https://nodejs.org) ≥ 20.19.
 
 ```bash
-# 1. Install the tools it needs
 npm install
-
-# 2. Start the website
-npm run dev
+npm run dev        # Svelte/Vite dev server (web preview only)
+npm run cap:sync   # vite build + copy web assets into the android platform
+npm run apk        # ... then assemble the debug APK (needs JDK 21 + Android SDK)
 ```
 
-Your browser opens a local copy. During development it automatically reads the local API at
-`http://localhost:8788` (start that with the instructions in the `alam-api` README).
+`npm test`, `npm run typecheck`, and `npm run build` verify the code.
 
-Other handy commands:
+## Getting the APK
 
-```bash
-npm test                # run the automated checks
-npm run typecheck       # check for mistakes in the code
-npm run build           # make the production version (into the dist/ folder)
-```
+Push to `main` and a GitHub Actions workflow
+(`.github/workflows/build.yml`) runs typecheck + tests, builds the web bundle,
+synces Capacitor, and uploads a **debug-signed APK** as the `alam-debug-apk`
+artifact — download and install it directly (sideload). A signing keystore and Play
+Store review are only needed if the app is ever released through the Play Store.
 
----
+## Layout
 
-## How it's laid out (short version)
-
-The code is split so that anything that talks to the network or the browser lives in one
-place (`src/core/`), anything that's just a calculation lives in another (`src/domain/`),
-and each part of the screen — weather, air, hazards — has its own folder (`src/features/`).
-That way a change to one screen never quietly breaks another.
-
----
-
-## Putting it live
-
-You usually don't build or upload anything from this repo by hand. Publishing is automatic:
-
-- The `alam-api` repo's deploy workflow builds this site and publishes it to Cloudflare on
-  every update to the `main` branch.
-- The live address is your own custom domain, `app.oh-alam.my`.
-- Nothing runs on your computer or on a server you have to pay for.
-
-The one-time setup just means adding a couple of Cloudflare and GitHub tokens as repository
-secrets in the `alam-api` repo. If you skip it, the site simply keeps running the version
-already published.
-
----
-
-## Notes
-
-- Made with Svelte 5 + Vite, a map (Leaflet), and Tailwind.
-- Works offline after first visit (adds to home screen on a phone).
-- Tests and visual checks run automatically before anything is published.
+- `src/` — Svelte 5 UI (the five-tab dashboard: Home, Weather, AQI, Hazards, News)
+- `public/runners/fetch.js` — background sync runner (headless JS env, Phase 1)
+- `android/` — generated Capacitor Android platform (committed, per Capacitor best practice)
+- `capacitor.config.ts` — app identity + plugin wiring (CapacitorHttp is **enabled**:
+  several data sources send no CORS headers, so requests must go through the native
+  HTTP client — see `docs/device-only-app-spec.md` §3.1)

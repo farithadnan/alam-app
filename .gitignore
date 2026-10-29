@@ -5,3 +5,14 @@ data/
 *.jsonl
 .hermes/
 .env
+
+# Capacitor / Android build outputs (the android/ sources ARE committed)
+android/.gradle/
+android/build/
+android/app/build/
+android/app/schemas/
+android/capacitor-cordova-android-plugins/build/
+android/.idea/
+android/local.properties
+*.apk
+*.aab

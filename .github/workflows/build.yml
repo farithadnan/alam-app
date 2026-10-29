@@ -1,0 +1,64 @@
+# Alam app — build the sideloadable Android APK.
+#
+# Debug-signed by the Android Gradle Plugin (separate signing keystore only needed for
+# Play Store release). The APK lands as a GitHub Actions artifact on every push to
+# main and on manual dispatch: install it directly by downloading the artifact.
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      # Capacitor build: vite build into dist/ (base './') then copy into the
+      # android platform. Uses the same output the local `npm run apk` produces.
+      - name: Vite build
+        run: npm run build
+
+      - name: cap sync android
+        run: npx cap sync android
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # Gradle needs ANDROID_HOME; the runner's preinstalled SDK is enabled via the
+      # ANDROID_LOCAL_PROPERTIES trick below (sdk.dir points at the cached SDK).
+      - name: Build debug APK
+        working-directory: android
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+        run: |
+          if [ -z "$ANDROID_HOME" ]; then ANDROID_HOME="$ANDROID_SDK_ROOT"; fi
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          chmod +x ./gradlew
+          ./gradlew :app:assembleDebug --no-daemon
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: alam-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

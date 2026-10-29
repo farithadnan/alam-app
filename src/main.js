@@ -11,8 +11,14 @@ initLang();
 const target = document.getElementById("app");
 if (target) mount(App, { target });
 
-// PWA: register the service worker in production only (never during dev).
-if (import.meta.env.PROD && "serviceWorker" in navigator) {
+// PWA: register the service worker in production only (never during dev), and only
+// when served over http(s) — the Capacitor APK serves from a native scheme where
+// service workers do not exist and must never intercept the app's own assets.
+if (
+  import.meta.env.PROD &&
+  "serviceWorker" in navigator &&
+  !location.hostname.includes("localhost")
+) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
   });
