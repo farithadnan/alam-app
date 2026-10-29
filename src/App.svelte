@@ -2,6 +2,7 @@
 import { onMount } from "svelte";
 import { app, load, initLoc } from "./core/store.svelte.js";
 import { runSync } from "./device/sync.js";
+import { runAlertCheck } from "./device/alerts/run.js";
 import { SITE } from "./core/config.js";
 import { applyTheme } from "./core/theme.svelte.js";
 import { tr, trFmt } from "./core/i18n.svelte.js";
@@ -63,11 +64,14 @@ onMount(() => {
   applyTheme();
   // Device-only: seed/refresh from the on-device store. load() reads the store
   // immediately (fast, works offline), then runSync() fetches what is stale from
-  // the sources and re-loads so the fresh batch lands on screen.
+  // the sources and re-loads so the fresh batch lands on screen. After each sync
+  // the edge-trigger alert engine runs against the new observations.
   const refresh = () => {
     const pending = runSync();
     load();
-    void pending.finally(() => load());
+    void pending
+      .finally(() => load())
+      .then(() => runAlertCheck({ townSlug: app.town, state: app.state }).catch(() => {}));
   };
   refresh();
   // Background freshness every 15 minutes while the tab is visible (the OS does the

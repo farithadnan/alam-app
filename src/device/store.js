@@ -211,6 +211,42 @@ export class DeviceStore {
     return this.townDistricts.get(slug) ?? null;
   }
 
+  /** All edge-trigger state rows for the device (one local "chat", id 0). */
+  async alertStateForDevice() {
+    await this.init();
+    const rows = [];
+    for (const { key, value } of await this.backend.getAll()) {
+      if (key.startsWith("alert:")) rows.push(value);
+    }
+    return rows.sort((a, b) => (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : a.key.localeCompare(b.key)));
+  }
+
+  async setAlertState(row) {
+    await this.init();
+    await this.backend.put(`alert:${row.kind}|${row.key}`, row);
+  }
+
+  /** Append to the in-app alert center history (bounded). */
+  async addAlert(record) {
+    await this.init();
+    const id = Date.now() + "-" + Math.random().toString(36).slice(2, 7);
+    await this.backend.put(`log:${id}`, { id, at: new Date().toISOString(), ...record });
+    // Keep the history bounded: drop the oldest if over 200 entries.
+    const logs = [];
+    for (const { key, value } of await this.backend.getAll()) if (key.startsWith("log:")) logs.push({ key, value });
+    if (logs.length > 200) {
+      logs.sort((a, b) => (a.value.at < b.value.at ? -1 : 1));
+      await Promise.all(logs.slice(0, logs.length - 200).map(({ key }) => this.backend.delete(key)));
+    }
+  }
+
+  async alertHistory(limit = 100) {
+    await this.init();
+    const logs = [];
+    for (const { key, value } of await this.backend.getAll()) if (key.startsWith("log:")) logs.push(value);
+    return logs.sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, limit);
+  }
+
   /** Clear everything (test helper; also usable as a "factory reset"). */
   async reset() {
     this.rows = [];
@@ -220,6 +256,8 @@ export class DeviceStore {
     await this.backend.delete("obs:");
     await this.backend.delete("src:");
     await this.backend.delete("td:");
+    await this.backend.delete("alert:");
+    await this.backend.delete("log:");
     this.ready = null;
   }
 

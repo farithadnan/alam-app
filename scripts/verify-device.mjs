@@ -7,7 +7,6 @@
 import { runSync } from "../src/device/sync.js";
 import { deviceStore } from "../src/device/store.js";
 import { serve } from "../src/device/server.js";
-import { parseUrl } from "../src/device/server.js";
 
 const start = Date.now();
 console.log("[verify] syncing all adapters (this is the device doing the API's job)…");
@@ -36,5 +35,6 @@ console.log("[verify] /api/summary (from device store):", {
 const flood = await serve("./api/flood");
 console.log("[verify] /api/flood:", { river: flood.river.length, rain: flood.rain.length });
 
-const h = await serve(parseUrl);
+const snapSources = (await deviceStore.snapshot()).sources;
+console.log("[verify] stored per source:", snapSources.map((s) => `${s.source}:${s.rows}`).join(" · "));
 console.log(`[verify] took ${Date.now() - start}ms`);
